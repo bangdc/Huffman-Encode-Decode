@@ -1,0 +1,381 @@
+#include <stdio.h>
+#include <conio.h>
+#include <stdlib.h>
+#include <string.h>
+
+char 	fileInput[20]		=	"code.txt";
+char	fileCompress[20]	=	"compress.txt";
+char	fileDecompress[20]	=	"decompress.txt";
+char	*tableCodes[256];
+int 	totalBits	=	0;
+int		totalCompressedBits	=	0;
+
+struct	huffmanTree{
+	int		lettre;
+	int		frequency;
+	char	code[8];
+	struct	huffmanTree	*nextLettre;
+	struct	huffmanTree	*leftChild;
+	struct	huffmanTree	*rightChild;
+};
+
+struct	huffmanTree	*huffman;
+void	printhuffman(struct	huffmanTree *huffman);
+void 	printHuffmanTableCodes();
+void 	initialize();
+void	countLettre(int c);
+struct	huffmanTree	*orderhuffman(struct	huffmanTree *huffman);
+int 	checkHuffmanLeaf(struct huffmanTree *nodeCheck);
+int		countTotalLettre();
+void	buildHuffmanTree();
+void 	decompress();
+void	buildHuffmanCode(struct huffmanTree *huffman, char code[], int index);
+struct 	huffmanTree *copyNode(struct	huffmanTree *node1, struct huffmanTree *node2);
+int main()
+{
+	initialize();
+	FILE * pInput;
+	FILE * pCompress;
+	FILE * pDecompress;
+	int c;
+	pInput	=	fopen (fileInput,"r");
+	if (pInput==NULL) 
+	{
+		perror ("Error opening input file");
+	}
+	else
+	{
+	  	while((c=fgetc(pInput)) != EOF)
+	  	{
+	  		totalBits	+=	8;
+	  		countLettre(c);
+	  	}
+	  	fclose (pInput);
+	  	
+		int	totalLettre	=	countTotalLettre();
+	  	
+	  	// Neu so chu cai khac nhau lon hon 1.
+		if(totalLettre > 1)
+	  	{
+	  		/*Order huffman by freequency*/
+	  		huffman	=	orderhuffman(huffman);
+			  	  		
+			buildHuffmanTree();
+	  		
+			char	code[100];
+	  		
+	  		buildHuffmanCode(huffman, code, 0);
+	  		
+	  		pInput			=	fopen (fileInput,"r");
+	  		pCompress 		= 	fopen (fileCompress,"w");
+			int countBits	=	0;
+			int	bitsLeft	=	8;
+			
+			int i;
+			int	encodeLettre	=	0;
+			int	totalLettres	=	0;
+			int k = 0;
+			while((c=fgetc(pInput)) != EOF)
+		  	{
+		  		printf("%c", c);
+				int	leng	=	strlen(tableCodes[c]);
+				for(i = 0; i<leng; i++)
+				{
+					//If there are 8 bits, Convert to number, add Lettre equivalent of this number to output.
+					if(countBits == 8)
+					{
+						fprintf (pCompress, "%c", encodeLettre);
+						totalLettres++;
+						/*Reset count vars*/
+						encodeLettre	=	0;
+						countBits		=	0;
+						bitsLeft		=	8;
+						i--;
+					}
+					else
+					{
+						int d 			= 	*(tableCodes[c]+i) - '0';
+						encodeLettre	+=	d << (bitsLeft-1);
+						countBits++;
+						bitsLeft--;
+						totalCompressedBits++;
+					}
+				}
+			}
+			if(countBits != 0)
+			{
+				fprintf (pCompress, "%c", encodeLettre);
+			}
+			printf("\n\n\n");
+			printf("THERE ARE TOTAL %d bits \n", totalBits);
+			printf("COMPRESSED TOTAL %d bits \n", totalCompressedBits);
+			
+			getch();
+			fclose (pInput);
+			fclose (pCompress);
+			
+			//DECOMPRESS 
+			decompress();
+	  	}
+	  	else
+	  	{
+	  		printf("Co it hon 2 ki tu de lap cay HUFFMAN");
+	  	}
+	}
+	getch();
+}
+
+void 	decompress()
+{
+	int decompresstotalCompressedBits 	=	totalCompressedBits;
+	FILE * pCompress;
+	FILE * pDecompress;
+	pDecompress	=	fopen(fileDecompress, "w");
+	pCompress	=	fopen (fileCompress,"r");
+	int	k;
+	int	c;
+	int	bitsLeft	=	8;
+	struct 	huffmanTree	*tempNode	=	huffman;
+	printf("\n\n");
+	printf("DECODE DOCUMENT : \n\n");
+	while(decompresstotalCompressedBits>0)
+	{
+		c	=	fgetc(pCompress);
+		int	encodeLettre	=	c;
+		if(decompresstotalCompressedBits < 8) {
+			bitsLeft	=	decompresstotalCompressedBits;
+		}	
+		int countBits 	=	8;
+		for(k=bitsLeft; k>0; k--)
+		{
+			int	bit	=	(encodeLettre >> (countBits-1) ) & 1;
+			if( bit == 0)
+			{
+				tempNode	=	tempNode->leftChild;
+			}
+			else
+			{
+				tempNode	=	tempNode->rightChild;
+			}
+			if(checkHuffmanLeaf(tempNode) == 1)
+			{
+				printf ("%c", tempNode->lettre);
+				fprintf (pDecompress, "%c", tempNode->lettre);
+				tempNode	=	huffman;
+			}
+			countBits--;
+			decompresstotalCompressedBits--;
+		}
+	}
+	fclose (pDecompress);
+	fclose (pCompress);
+}
+
+void	initialize()
+{
+	huffman	=	(struct huffmanTree *) malloc(sizeof(struct huffmanTree));
+	huffman->nextLettre	=	0;
+	huffman->leftChild	=	0;
+	huffman->rightChild	=	0;
+}
+struct huffmanTree *copyNode(struct	huffmanTree *node1, struct huffmanTree *node2)
+{
+	node1->lettre		=	node2->lettre;
+	node1->frequency	=	node2->frequency;
+	node1->leftChild	=	node2->leftChild;
+	node1->rightChild	=	node2->rightChild;
+	
+	return node1;
+}
+/*
+	Inputs:	struct huffmanTree, char code, int index
+*/
+void 	buildHuffmanCode(struct huffmanTree *huffman, char code[], int index)
+{
+	//	printf("Duyet Den '%c' voi Tan Suat %5d : \n", Huffman->kiTu, Huffman->tanSuat);
+	if(huffman->leftChild != 0)
+	{
+		code[index]	=	'0';
+		buildHuffmanCode(huffman->leftChild, code, index + 1);
+	}
+	
+	if(huffman->rightChild	!= 0)
+	{
+		code[index]	=	'1';
+		buildHuffmanCode(huffman->rightChild,  code, index + 1);
+	}
+	
+	if(checkHuffmanLeaf(huffman) == 1)
+	{
+		int i;
+		//printf("ENCODE '%c'; Frequency: %5d : ", huffman->lettre, huffman->frequency);
+		tableCodes[huffman->lettre]	=	(char *) malloc(sizeof(char) * index);
+		for(i=0; i<index; i++)
+		{
+			//printf("%c", code[i]);
+			*(tableCodes[huffman->lettre] + i)	=	code[i];
+		}
+		*(tableCodes[huffman->lettre] + index)	=	'\0';
+		//printf("\n");
+	}
+}
+/*
+	
+*/
+void 	buildHuffmanTree()
+{
+	struct	huffmanTree *tempHuffman	=	huffman;
+	while(tempHuffman->nextLettre != 0 && tempHuffman->nextLettre->nextLettre !=0)
+	{
+		struct	huffmanTree	*newNode;
+		newNode		=	(struct huffmanTree *) malloc(sizeof(struct huffmanTree));
+		
+		struct	huffmanTree	*newLeft;
+		newLeft		=	(struct huffmanTree *) malloc(sizeof(struct huffmanTree));
+		
+		struct	huffmanTree	*newRight;
+		newRight	=	(struct huffmanTree *) malloc(sizeof(struct huffmanTree));
+		
+		newLeft		=	copyNode(newLeft, tempHuffman);
+		newRight	=	copyNode(newRight, tempHuffman->nextLettre);
+		
+		newNode->leftChild	=	newLeft;
+		newNode->rightChild	=	newRight;
+		newNode->lettre		=	256;
+		newNode->frequency	=	newLeft->frequency	+	newRight->frequency;
+		newNode->nextLettre	=	tempHuffman->nextLettre->nextLettre;
+		
+		free(tempHuffman->nextLettre);
+		free(tempHuffman);
+		
+		tempHuffman		=	newNode;
+		tempHuffman		=	orderhuffman(tempHuffman);
+	}
+	huffman	=	tempHuffman;
+}
+/*
+	Input: struct huffmanTree *huffman
+	Output: struct huffman order by frequency from low to high
+*/
+struct	huffmanTree	*orderhuffman(struct	huffmanTree *huffman)
+{
+	struct	huffmanTree *temp1	=	huffman;
+	
+	while(temp1->nextLettre->nextLettre != 0)
+	{
+		struct	huffmanTree *temp2	=	temp1->nextLettre;
+		while(temp2->nextLettre!=0)
+		{
+			if(temp1->frequency > temp2->frequency)
+			{
+				int	tempLettre	=	temp1->lettre;
+				int	tempFreq	=	temp1->frequency;
+				struct	huffmanTree *tempLeft	=	temp1->leftChild;
+				struct	huffmanTree *tempRight	=	temp1->rightChild;
+				
+				temp1->lettre			=	temp2->lettre;
+				temp1->frequency		=	temp2->frequency;
+				temp1->leftChild		=	temp2->leftChild;
+				temp1->rightChild		=	temp2->rightChild;
+				
+				temp2->leftChild		=	tempLeft;
+				temp2->rightChild		=	tempRight;	
+				temp2->lettre			=	tempLettre;
+				temp2->frequency		=	tempFreq;
+			}
+			temp2	=	temp2->nextLettre;
+		}
+		temp1	=	temp1->nextLettre;
+	}
+	return	huffman;
+}
+int		countTotalLettre()
+{
+	int count1	=	0;
+	struct	huffmanTree *temp	=	huffman;
+	while(temp->nextLettre != 0)
+	{
+		count1++;
+		temp	=	temp->nextLettre;
+	}
+	return	count1;
+}
+int 	checkHuffmanLeaf(struct huffmanTree *nodeCheck)
+{
+	if(nodeCheck->leftChild == 0 && nodeCheck->rightChild == 0)
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+void	printhuffman(struct	huffmanTree *huffman)
+{
+	int count1	=	0;
+	int	count2	=	0;
+	printf("HUFFMAN TABLE STATISTIC \n\n");
+	struct	huffmanTree *temp	=	huffman;
+	while(temp->nextLettre != 0)
+	{
+		printf("Lettre %2d is '%c' and ASCII code is %3d appears for %8d times \n",count1, temp->lettre,temp->lettre, temp->frequency);
+		count1++;
+		count2+=temp->frequency;
+		temp	=	temp->nextLettre;
+	}
+	printf("\n");
+	printf("TOTAL %10d LETTRES AND %10d FREQUENCIES \n\n", count1, count2);
+}
+
+void	countLettre(int c)
+{
+	struct	huffmanTree *temp	=	huffman;
+	int		flagCheck	=	0;
+	int		count		=	0;
+	while(temp->nextLettre!=0)
+	{
+		if(temp->lettre == c)
+		{
+			temp->frequency++;
+			flagCheck	=	1;
+			break;
+		}
+		temp	=	temp->nextLettre;
+		count++;
+	}
+	if(flagCheck == 0)
+	{
+		struct	huffmanTree *newNode;
+		newNode		=	(struct huffmanTree *) malloc(sizeof(struct huffmanTree));
+		newNode->leftChild	=	0;
+		newNode->rightChild	=	0;
+		if(count	== 	0)
+		{
+			newNode->lettre			=	c;
+			newNode->frequency		=	1;
+			newNode->nextLettre		=	huffman;
+			huffman				=	newNode;
+		}
+		else
+		{
+			temp->lettre			=	c;
+			temp->frequency			=	1;
+			newNode->nextLettre		=	temp->nextLettre;
+			temp->nextLettre		=	newNode;
+		}
+	}
+}
+
+void printHuffmanTableCodes()
+{
+	int i;
+	for(i=0; i<256; i++) 
+	{
+		if(tableCodes[i] != 0)
+		{
+			printf("%3d  %c %20s \n", i, i, tableCodes[i]);
+		}
+	}
+}
